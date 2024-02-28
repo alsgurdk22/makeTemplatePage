@@ -1,7 +1,7 @@
 "use client";
-import React, { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState, KeyboardEvent } from 'react';
 
-const MIN_RECT_SIZE = 30;
+const MIN_RECT_SIZE = 20;
 
 interface Rectangle {
   startX: number;
@@ -12,7 +12,7 @@ interface Rectangle {
   target?: '_self' | '_blank';
 }
 
-const MainPage = () => {
+const HtmlCodePage = () => {
   const [imageSrc, setImageSrc] = useState<string>('');
   const [imageSize, setImageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -34,6 +34,7 @@ const MainPage = () => {
     const handleMouseMove = (e: MouseEvent) => {
       if (resizingRect !== null) {
         // 크기 조절 중인 경우
+        console.log(2);
         const rect = containerRef.current!.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
@@ -52,11 +53,25 @@ const MainPage = () => {
         const rect = containerRef.current!.getBoundingClientRect();
         const mouseX = e.clientX - rect.left - draggingRect.offsetX;
         const mouseY = e.clientY - rect.top - draggingRect.offsetY;
+
+        console.log(rect, mouseX, imageSize.width, mouseY, imageSize.height);
         
         // 선택된 사각형 이동 로직
         setRectangles(currentRectangles => currentRectangles.map((r, index) => {
           if (index === draggingRect.index) {
-            return {...r, startX: mouseX, startY: mouseY, endX: mouseX + (r.endX - r.startX), endY: mouseY + (r.endY - r.startY)};
+            const startX = Math.max(0, Math.min(mouseX, imageSize.width));
+            const startY = Math.max(0, Math.min(mouseY, imageSize.height));
+            let newEndX = startX + (r.endX - r.startX);
+            let newEndY = startY + (r.endY - r.startY);
+
+            // 이미지의 너비와 높이를 넘어가지 않도록 조정
+            newEndX = Math.min(newEndX, imageSize.width);
+            newEndY = Math.min(newEndY, imageSize.height);
+
+            // 사각형의 최소 크기를 유지하기 위해 startX, startY 조정
+            const newStartX = Math.max(0, newEndX - (r.endX - r.startX));
+            const newStartY = Math.max(0, newEndY - (r.endY - r.startY));
+            return {...r, startX: newStartX, startY: newStartY, endX: newEndX, endY: newEndY};
           }
           return r;
         }));
@@ -78,10 +93,11 @@ const MainPage = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [resizingRect, draggingRect, setRectangles]);
+  }, [resizingRect, draggingRect, setRectangles, imageSize.width, imageSize.height]);
 
   const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!imageSrc) return;
+    console.log(4);
 
     const rect = containerRef.current!.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
@@ -123,13 +139,14 @@ const MainPage = () => {
       setCurrentRect({ startX, startY, endX: startX, endY: startY });
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
-        // 마우스 이동 중 좌표 계산
-        const endX = moveEvent.clientX - rect.left;
-        const endY = moveEvent.clientY - rect.top;
+      // 마우스 이동 중 좌표 계산
+      const rect = containerRef.current!.getBoundingClientRect();
+      const endX = Math.max(0, Math.min(moveEvent.clientX - rect.left, imageSize.width));
+      const endY = Math.max(0, Math.min(moveEvent.clientY - rect.top, imageSize.height));
 
-        // 실시간으로 사각형 영역 업데이트
-        setCurrentRect(prevRect => ({ ...prevRect!, endX, endY }));
-      };
+      // 실시간으로 사각형 영역 업데이트
+      setCurrentRect(prevRect => ({ ...prevRect!, endX, endY }));
+    };
 
       const handleMouseUp = () => {
         // 마우스 버튼을 놓았을 때 이벤트 리스너 제거
@@ -144,8 +161,15 @@ const MainPage = () => {
   };
 
   const handleMouseUp = () => {
+    // 새로운 사각형 생성
     if (currentRect) {
-      setRectangles([...rectangles, currentRect]);
+      if (Math.abs(currentRect.endX - currentRect.startX) >= MIN_RECT_SIZE && Math.abs(currentRect.endY - currentRect.startY) >= MIN_RECT_SIZE) {
+        setRectangles([...rectangles, currentRect]);
+      } else {
+        // 사각형이 너무 작을 때는 강제로 늘려준다
+        const resizeRect = { startX: currentRect.startX, startY: currentRect.startY, endX: currentRect.startX + MIN_RECT_SIZE, endY: currentRect.endY + MIN_RECT_SIZE };
+        setRectangles([...rectangles, resizeRect]);
+      }
       setCurrentRect(null);
     }
   };
@@ -166,6 +190,16 @@ const MainPage = () => {
         img.src = src;
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  // 키보드 입력 이벤트 핸들러
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Delete' && selectedRectIndex !== null) {
+      // Delete 키 입력 시 선택된 사각형 삭제
+      const newRectangles = rectangles.filter((_, index) => index !== selectedRectIndex);
+      setRectangles(newRectangles);
+      setSelectedRectIndex(null);
     }
   };
 
@@ -193,14 +227,21 @@ const MainPage = () => {
 
   // HTML 코드 생성 및 파일 다운로드 함수
   const generateHTMLCode = () => {
+    // Validation
     if (rectangles.length === 0) {
       alert('추가된 사각형이 없습니다.');
       return;
     }
 
+    const hasEmptyUrl = rectangles.some((rect) => !rect.url);
+    if (hasEmptyUrl) {
+      alert('각각의 사각형에 URL을 입력해주세요.');
+      return;
+    }
+
     let htmlContent = `
       <!DOCTYPE html>
-      <html lang="en">
+      <html lang="ko">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -242,9 +283,11 @@ const MainPage = () => {
       <div
         ref={containerRef}
         style={{ width: `${imageSize.width}px`, height: `${imageSize.height}px` }}
-        className="relative bg-gray-200"
+        className="relative bg-gray-200 cursor-crosshair"
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
       >
         {imageSrc && (
           <img
@@ -258,7 +301,7 @@ const MainPage = () => {
           <div
             key={index}
             className={`absolute border-2 ${
-              selectedRectIndex === index ? 'border-red-500 bg-red-400' : 'border-green-900 bg-green-400'
+              selectedRectIndex === index ? 'border-red-500 bg-red-400 cursor-move' : 'border-green-900 bg-green-400 cursor-pointer'
             } bg-opacity-50`}
             style={{
               left: `${Math.min(rect.startX, rect.endX)}px`,
@@ -341,4 +384,4 @@ const MainPage = () => {
   );
 };
 
-export default MainPage;
+export default HtmlCodePage;
