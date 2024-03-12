@@ -1,16 +1,15 @@
 "use client";
-import { ChangeEvent, useEffect, useRef, useState, KeyboardEvent, ElementRef } from 'react';
+import { ChangeEvent, useEffect, useRef, useState, KeyboardEvent, ElementRef, FormEventHandler } from 'react';
 import { useDropzone } from 'react-dropzone';
+import toast from "react-hot-toast";
 
 import { ImagePlus, Trash2 } from "lucide-react";
+import dayjs from "dayjs"
 import { cn } from "@/lib/utils";
 import { Input } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
 const MIN_RECT_SIZE = 20;
 
@@ -19,16 +18,17 @@ interface Rectangle {
   startY: number;
   endX: number;
   endY: number;
-  url?: string;
+  url: string;
   target?: '_self' | '_blank';
 }
 
 const HtmlCodePage = () => {
-  const [imageSrc, setImageSrc] = useState<string>('');
+  const [imageSrc, setImageSrc] = useState('');
   const [imageSize, setImageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const [rectangles, setRectangles] = useState<Rectangle[]>([]);
   const [currentRect, setCurrentRect] = useState<Rectangle | null>(null);
+  const [title, setTitle] = useState('');
 
   // 드래그 상태 및 선택된 사각형의 인덱스를 저장하기 위한 상태 추가
   const [draggingRect, setDraggingRect] = useState<{index: number, offsetX: number, offsetY: number} | null>(null);
@@ -36,6 +36,9 @@ const HtmlCodePage = () => {
 
   // 사각형 크기 조절 상태
   const [resizingRect, setResizingRect] = useState<{index: number, startX: number, startY: number} | null>(null);
+
+  // url정규식
+  const urlRegex = /^(http|https):\/\/[^ "]+$/;
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -155,7 +158,7 @@ const HtmlCodePage = () => {
       const startX = event.clientX - rect.left;
       const startY = event.clientY - rect.top;
 
-      setCurrentRect({ startX, startY, endX: startX, endY: startY });
+      setCurrentRect({ startX, startY, endX: startX, endY: startY, url: '' });
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
       // 마우스 이동 중 좌표 계산
@@ -169,7 +172,7 @@ const HtmlCodePage = () => {
       const newEndY = startY >= endY ? startY : endY;
 
       // 실시간으로 사각형 영역 업데이트
-      setCurrentRect(prevRect => ({ ...prevRect!, startX: newStartX, startY: newStartY, endX: newEndX, endY: newEndY }));
+      setCurrentRect(prevRect => ({ ...prevRect!, startX: newStartX, startY: newStartY, endX: newEndX, endY: newEndY, url: '' }));
     };
 
       const handleMouseUp = () => {
@@ -191,7 +194,7 @@ const HtmlCodePage = () => {
         setRectangles([...rectangles, currentRect]);
       } else {
         // 사각형이 너무 작을 때는 강제로 늘려준다
-        const resizeRect = { startX: currentRect.startX, startY: currentRect.startY, endX: currentRect.startX + MIN_RECT_SIZE, endY: currentRect.endY + MIN_RECT_SIZE };
+        const resizeRect = { startX: currentRect.startX, startY: currentRect.startY, endX: currentRect.startX + MIN_RECT_SIZE, endY: currentRect.endY + MIN_RECT_SIZE, url: '' };
         setRectangles([...rectangles, resizeRect]);
       }
       setCurrentRect(null);
@@ -234,8 +237,6 @@ const HtmlCodePage = () => {
   // 입력값 변경 핸들러
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const inputUrl = e.target.value;
-    // URL 형식인지 검사하는 정규식
-    const urlRegex = /^(http|https):\/\/[^ "]+$/;
     if (selectedRectIndex !== null) {
       setRectangles(prevRectangles =>
         prevRectangles.map((rect, index) =>
@@ -245,30 +246,26 @@ const HtmlCodePage = () => {
     }
   };
 
-  const handleInputUrlBlur = (e: ChangeEvent<HTMLInputElement>) => {
-    const inputUrl = e.target.value;
-    // URL 형식인지 검사하는 정규식
-    const urlRegex = /^(http|https):\/\/[^ "]+$/;
-    // if (selectedRectIndex !== null) {
-      if (!urlRegex.test(inputUrl)) {
-        alert('유효한 URL을 입력하세요.');
-        return;
-      }
+  // const handleInputUrlBlur = (e: ChangeEvent<HTMLInputElement>) => {
+  //   const inputUrl = e.target.value;
+  //   if (!urlRegex.test(inputUrl)) {
+  //     toast.error('유효한 URL을 입력하세요.');
+  //     return;
+  //   }
 
-      setRectangles(prevRectangles =>
-        prevRectangles.map((rect, index) =>
-          index === selectedRectIndex ? { ...rect, url: inputUrl } : rect
-        )
-      );
-    // }
-  };
+  //   setRectangles(prevRectangles =>
+  //     prevRectangles.map((rect, index) =>
+  //       index === selectedRectIndex ? { ...rect, url: inputUrl } : rect
+  //     )
+  //   );
+  // };
 
   // 라디오 버튼 변경 핸들러
-  const handleRadioChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleRadioChange = (v: string) => {
     if (selectedRectIndex !== null) {
       setRectangles(prevRectangles =>
         prevRectangles.map((rect, index) =>
-          index === selectedRectIndex ? { ...rect, target: e.target.value as '_self' | '_blank' } : rect
+          index === selectedRectIndex ? { ...rect, target: v as '_self' | '_blank' } : rect
         )
       );
     }
@@ -278,15 +275,30 @@ const HtmlCodePage = () => {
   const generateHTMLCode = () => {
     // Validation
     if (rectangles.length === 0) {
-      alert('추가된 사각형이 없습니다.');
+      toast.error('추가된 사각영역이 없습니다.');
       return;
+    }
+
+    if (!title) {
+      toast.error('제목을 입력해주세요.');
+      return
     }
 
     const hasEmptyUrl = rectangles.some((rect) => !rect.url);
     if (hasEmptyUrl) {
-      alert('각각의 사각형에 URL을 입력해주세요.');
+      toast.error('사각영역에 URL을 입력해주세요.');
       return;
     }
+
+    const hasValidUrl = rectangles.some((rect) => !urlRegex.test(rect.url));
+    if (hasValidUrl) {
+      toast.error('사각영역에 유효한 URL을 입력해주세요.');
+      return;
+    }
+
+    // 여기에 이미지 업로드 필요
+    // 업로드 후 경로
+    const today = dayjs().format('YYYYMMDD_HHmmss');
 
     let htmlContent = `
       <!DOCTYPE html>
@@ -294,11 +306,11 @@ const HtmlCodePage = () => {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Image Map</title>
+        <title>${title}</title>
       </head>
       <body>
-        <img src="${imageSrc}" alt="Image" usemap="#imageMap" />
-        <map name="imageMap">
+        <img src="${imageSrc}" alt="${title}" usemap="#imageMap_${today}" />
+        <map name="imageMap_${today}">
     `;
 
     rectangles.forEach((rect) => {
@@ -319,7 +331,7 @@ const HtmlCodePage = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'imageMap.html';
+    a.download = `${title}_PC.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -329,15 +341,30 @@ const HtmlCodePage = () => {
   const generateHTMLCodeMobile = () => {
     // Validation
     if (rectangles.length === 0) {
-      alert('추가된 사각형이 없습니다.');
+      toast.error('추가된 사각영역이 없습니다.');
       return;
+    }
+
+    if (!title) {
+      toast.error('제목을 입력해주세요.');
+      return
     }
 
     const hasEmptyUrl = rectangles.some((rect) => !rect.url);
     if (hasEmptyUrl) {
-      alert('각각의 사각형에 URL을 입력해주세요.');
+      toast.error('사각영역에 URL을 입력해주세요.');
       return;
     }
+
+    const hasValidUrl = rectangles.some((rect) => !urlRegex.test(rect.url));
+    if (hasValidUrl) {
+      toast.error('사각영역에 유효한 URL을 입력해주세요.');
+      return;
+    }
+
+    // 여기에 이미지 업로드 필요
+    // 업로드 후 경로
+    const today = dayjs().format('YYYYMMDD_HHmmss');
 
     let htmlContent = `
       <!DOCTYPE html>
@@ -345,7 +372,7 @@ const HtmlCodePage = () => {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Image Map</title>
+        <title>${title}</title>
         <style>
           body {
             padding: 0;
@@ -378,7 +405,7 @@ const HtmlCodePage = () => {
       </head>
       <body>
         <div class="image-container">
-          <img src="${imageSrc}" alt="Image" />
+          <img src="${imageSrc}" alt="${title}" />
           <div class="areas">
     `;
 
@@ -408,40 +435,11 @@ const HtmlCodePage = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'imageMap.html';
+    a.download = `${title}_MO.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    // 이미지의 최대 크기를 100%로 설정
-    // const responsiveHtmlContent = htmlContent.replace('<img', '<img style="max-width: 100%;"');
-
-    // // 사각 영역을 모바일의 반응형으로 링크로 만들기
-    // const responsiveRectangles = rectangles.map((rect) => {
-    //   const startXPercent = (rect.startX / imageSize.width) * 100;
-    //   const startYPercent = (rect.startY / imageSize.height) * 100;
-    //   const endXPercent = (rect.endX / imageSize.width) * 100;
-    //   const endYPercent = (rect.endY / imageSize.height) * 100;
-
-    //   return {
-    //     ...rect,
-    //     startX: startXPercent + '%',
-    //     startY: startYPercent + '%',
-    //     endX: endXPercent + '%',
-    //     endY: endYPercent + '%',
-    //   };
-    // });
-
-    // // 수정된 좌표로 HTML 코드 업데이트
-    // let responsiveHtmlCode = responsiveHtmlContent;
-    // responsiveRectangles.forEach((rect) => {
-    //   responsiveHtmlCode = responsiveHtmlCode.replace(
-    //     `coords="${rect.startX},${rect.startY},${rect.endX},${rect.endY}"`,
-    //     `coords="${rect.startX}%,${rect.startY}%,${rect.endX}%,${rect.endY}%"`
-    //   );
-    // });
-
-    // return responsiveHtmlCode;
   };
 
   const onDrop = (uploadFile: File[]) => {
@@ -464,7 +462,7 @@ const HtmlCodePage = () => {
   };
 
   const handleTitle = (e: ChangeEvent<HTMLInputElement>) => {
-    console.log(e.target.value);
+    setTitle(e.target.value);
   };
 
   const { getRootProps, getInputProps } = useDropzone({ onDrop });
@@ -501,8 +499,6 @@ const HtmlCodePage = () => {
             onKeyDown={handleKeyDown}
           >
           <div
-            // src={imageSrc}
-            // alt="Uploaded"
             style={{ background: `url(${imageSrc})` }}
             className="absolute top-0 left-0 w-full h-full"
             draggable="false"
@@ -555,37 +551,32 @@ const HtmlCodePage = () => {
         <div className="fixed bottom-0 left-0 right-0 p-2 bg-gray-900 flex flex-col gap-3 z-[80]">
           <div className="flex text-white items-center">
             <span className="w-20">링크경로</span>
-            <input
+            <Input
               type="text"
               placeholder="URL"
               value={rectangles[selectedRectIndex]?.url || ''}
               onChange={handleInputChange}
-              onBlur={handleInputUrlBlur}
               className="w-full border p-1 text-black"
             />
           </div>
-          <div className="text-white flex flex-row gap-3 items-center">
+          <div className="text-white flex flex-row gap-1 items-center">
             <span className="w-20">링크타겟</span>
-            <label>
-              <input
-                type="radio"
-                value="_self"
-                checked={rectangles[selectedRectIndex]?.target === '_self'}
-                onChange={handleRadioChange}
-                className="mr-1"
-              />
-              현재 창
-            </label>
-            <label>
-              <input
-                type="radio"
-                value="_blank"
-                checked={rectangles[selectedRectIndex]?.target === '_blank'}
-                onChange={handleRadioChange}
-                className="mr-1"
-              />
-              새 창
-            </label>
+            <RadioGroup defaultValue="_self" onValueChange={handleRadioChange} className="flex flex-row gap-4">
+              <div className="flex items-center gap-1">
+                <RadioGroupItem
+                  value="_self" id="r1" className="bg-white"
+                  checked={rectangles[selectedRectIndex]?.target === '_self'}
+                />
+                <Label htmlFor="r1">현재 창</Label>
+              </div>
+              <div className="flex items-center gap-1">
+                <RadioGroupItem
+                  value="_blank" id="r2" className="bg-white"
+                  checked={rectangles[selectedRectIndex]?.target === '_blank'}
+                />
+                <Label htmlFor="r2">새 창</Label>
+              </div>
+            </RadioGroup>
             <Button
               variant="ghost"
               size="icon"
@@ -610,8 +601,8 @@ const HtmlCodePage = () => {
             <div className="flex flex-col gap-2">
               {rectangles.map((item, index) => (
                 <Button
-                key={index}
-                  variant={!item.url ? 'destructive' : 'outline'}
+                  key={index}
+                  variant={!item.url ? 'destructive' : !urlRegex.test(item.url) ? 'default' : 'outline'}
                   onClick={() => {
                     setSelectedRectIndex(index)
                     if (!rectangles[index].target) {
@@ -624,7 +615,7 @@ const HtmlCodePage = () => {
                     }
                   }}
                 >
-                  {index+1}. url: {!item.url ? '미입력' : '입력완료'}
+                  {index+1}. {!item.url ? 'url 미입력' : !urlRegex.test(item.url) ? 'url 값 오류' : 'url 입력완료'}
                 </Button>
               ))}
             </div>
