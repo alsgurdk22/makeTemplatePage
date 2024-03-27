@@ -1,5 +1,5 @@
 "use client";
-import { ChangeEvent, useEffect, useRef, useState, KeyboardEvent, ElementRef, FormEventHandler } from 'react';
+import { ChangeEvent, useEffect, useRef, useState, KeyboardEvent, ElementRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import toast from "react-hot-toast";
 
@@ -9,18 +9,11 @@ import { cn } from "@/lib/utils";
 import { Input } from '@/components/ui/input';
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
+import { Rectangle } from "@/types/imagemap";
 
 const MIN_RECT_SIZE = 20;
-
-interface Rectangle {
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
-  url: string;
-  target?: '_self' | '_blank';
-}
 
 const HtmlCodePage = () => {
   const [imageSrc, setImageSrc] = useState('');
@@ -594,7 +587,7 @@ const HtmlCodePage = () => {
           <aside
             ref={sidebarRef}
             className={cn(
-              "fixed h-full bg-gray-300 overflow-y-auto flex w-60 flex-col z-[80] right-0 p-3",
+              "fixed h-full bg-gray-300 overflow-y-auto flex w-60 flex-col z-[80] left-0 p-3",
             )}
           >
             {/* <Input  accept="image/*" type="file" onChange={handleImageChange} /> */}
